@@ -268,6 +268,7 @@ function generateHintMap(options = {}) {
       login: detectLogin(),
       captcha: detectCaptcha(),
       cookieBanner: detectCookieBanner(),
+      qrCode: detectQRCodes().length > 0,
     },
     dismissed,   // what was auto-cleared this round
     interactables: [],
@@ -484,6 +485,133 @@ function handleWaitFor(params) {
   });
 }
 
+// ─── QR Code Detection ──────────────────────────────────────────────────────
+//
+// On headless servers, the user can't see QR codes for WeChat/Alipay/DingTalk
+// login. We detect them and extract the image so the AI can push it to the user.
+
+function detectQRCodes() {
+  const qrCandidates = [];
+
+  // 1. Images with QR-related attributes
+  const qrSelectors = [
+    'img[src*="qr"]', 'img[src*="QR"]', 'img[src*="qrcode"]',
+    'img[class*="qr"]', 'img[id*="qr"]',
+    'img[alt*="二维码"]', 'img[alt*="QR"]', 'img[alt*="扫码"]', 'img[alt*="scan"]',
+    'img[src*="login"]img[src*="code"]',
+  ];
+
+  for (const sel of qrSelectors) {
+    for (const img of document.querySelectorAll(sel)) {
+      if (!isVisible(img) || img.width < 50 || img.height < 50) continue;
+      qrCandidates.push({
+        type: 'img',
+        src: img.src,
+        alt: img.alt || '',
+        size: { w: img.width, h: img.height },
+        rect: img.getBoundingClientRect(),
+      });
+    }
+  }
+
+  // 2. Canvas elements (many QR generators render to canvas)
+  for (const canvas of document.querySelectorAll('canvas')) {
+    if (!isVisible(canvas)) continue;
+    const rect = canvas.getBoundingClientRect();
+    // QR codes are usually square-ish, 100-400px
+    if (rect.width < 80 || rect.height < 80) continue;
+    if (Math.abs(rect.width - rect.height) > rect.width * 0.2) continue; // not square
+
+    // Check if near QR-related text
+    const parent = canvas.parentElement;
+    const nearbyText = (parent?.innerText || '').toLowerCase();
+    const isQR = /qr|二维码|扫码|扫一扫|scan|微信|wechat|alipay|支付宝|钉钉/.test(nearbyText);
+
+    if (isQR || rect.width > 120) {
+      try {
+        qrCandidates.push({
+          type: 'canvas',
+          dataUrl: canvas.toDataURL('image/png'),
+          size: { w: Math.round(rect.width), h: Math.round(rect.height) },
+          nearbyText: nearbyText.slice(0, 100),
+          rect,
+        });
+      } catch (e) {
+        // Canvas may be tainted (cross-origin), skip
+        qrCandidates.push({
+          type: 'canvas',
+          tainted: true,
+          size: { w: Math.round(rect.width), h: Math.round(rect.height) },
+          nearbyText: nearbyText.slice(0, 100),
+          rect,
+        });
+      }
+    }
+  }
+
+  // 3. SVG-based QR codes
+  for (const svg of document.querySelectorAll('svg')) {
+    if (!isVisible(svg)) continue;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width < 80 || rect.height < 80) continue;
+    if (Math.abs(rect.width - rect.height) > rect.width * 0.2) continue;
+
+    // SVG QR codes have many small rect/path elements
+    const pathCount = svg.querySelectorAll('rect, path').length;
+    if (pathCount > 50) {
+      const parent = svg.parentElement;
+      const nearbyText = (parent?.innerText || '').toLowerCase();
+      qrCandidates.push({
+        type: 'svg',
+        size: { w: Math.round(rect.width), h: Math.round(rect.height) },
+        nearbyText: nearbyText.slice(0, 100),
+        pathCount,
+        rect,
+      });
+    }
+  }
+
+  return qrCandidates;
+}
+
+// Capture a specific region of the page as base64 image
+function captureRegion(rect) {
+  try {
+    const canvas = document.createElement('canvas');
+    const scale = window.devicePixelRatio || 1;
+    canvas.width = rect.width * scale;
+    canvas.height = rect.height * scale;
+    // We can't directly capture a region from content script,
+    // but we can return the rect for the background script to handle via CDP
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      devicePixelRatio: scale
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function handleDetectQR() {
+  const qrs = detectQRCodes();
+  return {
+    found: qrs.length > 0,
+    count: qrs.length,
+    qrcodes: qrs.map(qr => ({
+      type: qr.type,
+      src: qr.src || null,
+      dataUrl: qr.dataUrl || null,
+      tainted: qr.tainted || false,
+      size: qr.size,
+      nearbyText: qr.nearbyText || qr.alt || '',
+      captureRect: qr.rect ? captureRegion(qr.rect) : null,
+    }))
+  };
+}
+
 // ─── Message router ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -496,6 +624,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     extract:       () => handleExtract(params),
     wait_for:      () => handleWaitFor(params),
     auto_dismiss:  () => ({ dismissed: autoDismiss() }),
+    detect_qr:     () => handleDetectQR(),
   };
   const fn = handlers[action];
   if (!fn) { sendResponse({ error: `Unknown: ${action}` }); return true; }

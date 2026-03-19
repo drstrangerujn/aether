@@ -280,6 +280,80 @@ server.tool(
   }
 );
 
+// ── Headless / Remote tools ──
+
+server.tool(
+  'detect_qr',
+  'Detect QR codes on the current page (login QR, payment QR, etc). Essential for headless/remote servers where the user cannot see the screen. Returns QR image data for the user to scan on their phone.',
+  {},
+  async () => {
+    const result = await sendToExtension('detect_qr');
+    const response = [];
+
+    if (result.found) {
+      for (const qr of result.qrcodes) {
+        if (qr.dataUrl) {
+          const base64 = qr.dataUrl.replace(/^data:image\/\w+;base64,/, '');
+          response.push({ type: 'image', data: base64, mimeType: 'image/png' });
+        }
+        if (qr.src) {
+          response.push({ type: 'text', text: `QR image URL: ${qr.src}` });
+        }
+      }
+      response.push({ type: 'text', text: JSON.stringify({
+        count: result.count,
+        details: result.qrcodes.map(q => ({ type: q.type, size: q.size, nearbyText: q.nearbyText }))
+      }, null, 2) });
+    } else {
+      response.push({ type: 'text', text: 'No QR codes detected on this page.' });
+    }
+
+    return { content: response };
+  }
+);
+
+server.tool(
+  'page_to_pdf',
+  'Export the current page as a PDF. Useful on headless servers where you cannot see the browser. Returns base64-encoded PDF data.',
+  {
+    landscape: z.boolean().optional().describe('Landscape orientation (default: false)')
+  },
+  async (params) => {
+    const result = await sendToExtension('page_to_pdf', params);
+    if (result.success && result.pdf) {
+      return {
+        content: [
+          { type: 'resource', resource: { uri: `data:application/pdf;base64,${result.pdf}`, mimeType: 'application/pdf', text: result.pdf } },
+          { type: 'text', text: `PDF exported: ${result.title} (${result.size})\nURL: ${result.url}` }
+        ]
+      };
+    }
+    return { content: [{ type: 'text', text: `PDF export failed: ${result.error}` }] };
+  }
+);
+
+server.tool(
+  'full_screenshot',
+  'Take a full-page screenshot (not just the viewport). Essential for headless/remote use. Captures the entire scrollable page.',
+  {
+    format: z.enum(['png', 'jpeg']).optional().describe('Image format'),
+    quality: z.number().optional().describe('JPEG quality 0-100')
+  },
+  async (params) => {
+    const result = await sendToExtension('full_screenshot', params);
+    if (result.dataUrl) {
+      const base64 = result.dataUrl.replace(/^data:image\/\w+;base64,/, '');
+      return {
+        content: [
+          { type: 'image', data: base64, mimeType: `image/${params.format || 'png'}` },
+          { type: 'text', text: `Full page: ${result.title}\nURL: ${result.url}\nSize: ${result.dimensions?.w}x${result.dimensions?.h}px` }
+        ]
+      };
+    }
+    return { content: [{ type: 'text', text: `Screenshot failed: ${result.error || 'unknown'}` }] };
+  }
+);
+
 server.tool(
   'click',
   'Click an element. Use hint_id from get_hint_map, or text to find by visible label. Sensitive clicks (payment, delete, send) require user approval via Safe Mode.',

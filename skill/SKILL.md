@@ -133,6 +133,34 @@ cache_delete({ key: "..." })         → remove a path
 
 **When to use:** any workflow you'll repeat more than once on the same site. Product searches, report exports, form submissions, data extraction routines.
 
+## Headless / Remote Server
+
+When running on a server without a display (Ubuntu headless, Docker, etc):
+
+### Login QR codes
+Many Chinese services (WeChat, Alipay, DingTalk, Taobao) require scanning a QR code to log in. On a headless server, the user can't see it.
+```
+navigate({ url: "https://login.taobao.com" })
+get_hint_map()
+→ if state.qrCode is true:
+  detect_qr()    → returns the QR image data
+  → present the image to the user: "Please scan this QR code with your phone"
+  wait_for({ text: "登录成功", timeout: 60000 })
+  → proceed with task
+```
+
+### Visual feedback
+```
+full_screenshot()    → capture entire page (not just viewport), send to user
+page_to_pdf()        → export page as PDF for user to review
+```
+
+### Tips for headless
+- Always call `get_hint_map` — it works without a display
+- `detect_qr` is your eyes for login pages
+- `page_to_pdf` is useful for archiving results the user wants to keep
+- `full_screenshot` captures below the fold — things you'd need to scroll to see
+
 ## Rules
 
 1. **Never type passwords or sensitive credentials.** If a login form appears, tell the user to do it manually.

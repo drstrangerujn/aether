@@ -117,6 +117,15 @@ async function handleServerMessage(msg) {
       case 'auto_dismiss':
         result = await cmdAutoDismiss(params);
         break;
+      case 'detect_qr':
+        result = await cmdDetectQR(params);
+        break;
+      case 'page_to_pdf':
+        result = await cmdPageToPdf(params);
+        break;
+      case 'full_screenshot':
+        result = await cmdFullScreenshot(params);
+        break;
       default:
         result = { error: `Unknown command: ${command}` };
     }
@@ -296,6 +305,125 @@ async function cmdExecuteJs(params) {
     world: 'MAIN'
   });
   return result.result;
+}
+
+// ─── detect_qr: Find QR codes on page ───────────────────────────────────
+
+async function cmdDetectQR(params = {}) {
+  const tab = await getTargetTab(params);
+  const result = await chrome.tabs.sendMessage(tab.id, {
+    action: 'detect_qr', params
+  });
+
+  // For QR codes that need region capture, take a screenshot and crop
+  if (result.found && result.qrcodes) {
+    for (const qr of result.qrcodes) {
+      if (!qr.dataUrl && !qr.src && qr.captureRect) {
+        // Use visible tab capture + crop info
+        try {
+          const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+          qr.pageScreenshot = dataUrl;
+          qr.cropHint = qr.captureRect; // AI/client can crop this region
+        } catch (e) {
+          // Headless may not support captureVisibleTab, use debugger
+          try {
+            await chrome.debugger.attach({ tabId: tab.id }, '1.3');
+            const { data } = await chrome.debugger.sendCommand(
+              { tabId: tab.id }, 'Page.captureScreenshot', {
+                format: 'png',
+                clip: {
+                  x: qr.captureRect.x, y: qr.captureRect.y,
+                  width: qr.captureRect.width, height: qr.captureRect.height,
+                  scale: 1
+                }
+              }
+            );
+            qr.dataUrl = `data:image/png;base64,${data}`;
+            await chrome.debugger.detach({ tabId: tab.id });
+          } catch (e2) {
+            qr.captureError = e2.message;
+          }
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+// ─── page_to_pdf: Export page as PDF via CDP ────────────────────────────────
+
+async function cmdPageToPdf(params = {}) {
+  const tab = await getTargetTab(params);
+
+  try {
+    await chrome.debugger.attach({ tabId: tab.id }, '1.3');
+    const { data } = await chrome.debugger.sendCommand(
+      { tabId: tab.id }, 'Page.printToPDF', {
+        printBackground: true,
+        preferCSSPageSize: true,
+        landscape: params.landscape || false,
+      }
+    );
+    await chrome.debugger.detach({ tabId: tab.id });
+
+    return {
+      success: true,
+      pdf: data, // base64 encoded
+      url: tab.url,
+      title: tab.title,
+      size: Math.round(data.length * 0.75 / 1024) + 'KB', // approx decoded size
+    };
+  } catch (e) {
+    try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
+    return { success: false, error: e.message };
+  }
+}
+
+// ─── full_screenshot: Full page screenshot via CDP ──────────────────────────
+
+async function cmdFullScreenshot(params = {}) {
+  const tab = await getTargetTab(params);
+
+  try {
+    await chrome.debugger.attach({ tabId: tab.id }, '1.3');
+
+    // Get full page dimensions
+    const { result: layout } = await chrome.debugger.sendCommand(
+      { tabId: tab.id }, 'Runtime.evaluate', {
+        expression: 'JSON.stringify({w:document.documentElement.scrollWidth,h:document.documentElement.scrollHeight})'
+      }
+    );
+    const dims = JSON.parse(layout.value);
+
+    // Capture full page
+    const { data } = await chrome.debugger.sendCommand(
+      { tabId: tab.id }, 'Page.captureScreenshot', {
+        format: params.format || 'png',
+        quality: params.quality || 80,
+        clip: { x: 0, y: 0, width: dims.w, height: Math.min(dims.h, 16384), scale: 1 },
+        captureBeyondViewport: true,
+      }
+    );
+
+    await chrome.debugger.detach({ tabId: tab.id });
+
+    return {
+      dataUrl: `data:image/${params.format || 'png'};base64,${data}`,
+      url: tab.url,
+      title: tab.title,
+      dimensions: dims,
+    };
+  } catch (e) {
+    try { await chrome.debugger.detach({ tabId: tab.id }); } catch (_) {}
+    // Fallback to visible tab capture
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+      return { dataUrl, url: tab.url, title: tab.title, fullPage: false };
+    } catch (e2) {
+      return { success: false, error: `CDP: ${e.message}, Fallback: ${e2.message}` };
+    }
+  }
 }
 
 // ─── auto_dismiss: Clear roadblocks (cookies, popups, etc) ──────────────
