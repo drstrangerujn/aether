@@ -161,6 +161,17 @@ page_to_pdf()        → export page as PDF for user to review
 - `page_to_pdf` is useful for archiving results the user wants to keep
 - `full_screenshot` captures below the fold — things you'd need to scroll to see
 
+## Self-Healing
+
+When you use a `hint_id` that no longer exists (page refreshed, layout changed, dynamic content), Aether doesn't just fail. It remembers what that element looked like (text, type, region, attributes) and searches for the closest match on the current page.
+
+If a response contains `"healed": { "originalId": "h5", "newText": "Submit", "confidence": 65 }`, it means:
+- The original `h5` was gone
+- Aether found a similar element and used it instead
+- Confidence score: how sure it is this is the right element (0-100)
+
+You don't need to do anything special. Just use hint_ids normally. If the page changes, self-healing kicks in automatically. If it can't find a match (score < 30), it reports the error as usual and you should call `get_hint_map` to get fresh IDs.
+
 ## Rules
 
 1. **Never type passwords or sensitive credentials.** If a login form appears, tell the user to do it manually.

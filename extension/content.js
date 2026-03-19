@@ -324,6 +324,7 @@ function generateHintMap(options = {}) {
     if (aria) hint.aria = aria;
 
     el.dataset.aetherId = hint.id;
+    saveSignature(hint.id, el); // for self-healing
     map.interactables.push(hint);
   });
 
@@ -367,51 +368,136 @@ function generateHintMap(options = {}) {
   return map;
 }
 
-// ─── Element finder ─────────────────────────────────────────────────────────
+// ─── Self-Healing Element Finder ────────────────────────────────────────────
+//
+// When a hint_id can't be found (page changed, dynamic reload), we don't just
+// fail. We remember what that element looked like and search for the closest
+// match on the current page. This is the core of self-healing.
 
-function findElement(params) {
-  if (params.hint_id) {
-    const el = document.querySelector(`[data-aether-id="${params.hint_id}"]`);
-    if (el) return el;
+// Cache of element signatures from the last Hint Map scan
+const elementSignatures = new Map(); // hint_id -> { text, type, region, tag, inputType, name, href, aria }
+
+function saveSignature(hintId, el) {
+  elementSignatures.set(hintId, {
+    text: getText(el).toLowerCase(),
+    type: getType(el),
+    tag: el.tagName.toLowerCase(),
+    region: detectRegion(el),
+    inputType: el.type || null,
+    name: el.name || null,
+    href: el.href || null,
+    aria: el.getAttribute('aria-label') || null,
+    placeholder: el.placeholder || null,
+  });
+}
+
+function similarity(sig, el) {
+  let score = 0;
+  const elText = getText(el).toLowerCase();
+  const elType = getType(el);
+
+  // Text match (most important)
+  if (sig.text && elText) {
+    if (elText === sig.text) score += 40;
+    else if (elText.includes(sig.text) || sig.text.includes(elText)) score += 25;
   }
 
+  // Type match
+  if (elType === sig.type) score += 20;
+
+  // Tag match
+  if (el.tagName.toLowerCase() === sig.tag) score += 10;
+
+  // Region match
+  if (detectRegion(el) === sig.region) score += 10;
+
+  // Attribute matches
+  if (sig.name && el.name === sig.name) score += 10;
+  if (sig.inputType && el.type === sig.inputType) score += 5;
+  if (sig.placeholder && el.placeholder === sig.placeholder) score += 10;
+  if (sig.aria && el.getAttribute('aria-label') === sig.aria) score += 10;
+  if (sig.href && el.href && el.href.includes(sig.href.split('?')[0])) score += 10;
+
+  return score;
+}
+
+function findElement(params) {
+  let healed = false;
+
+  // Direct lookup by hint_id
+  if (params.hint_id) {
+    const el = document.querySelector(`[data-aether-id="${params.hint_id}"]`);
+    if (el && isVisible(el)) return { el, healed: false };
+
+    // Self-Healing: hint_id not found, search by signature
+    const sig = elementSignatures.get(params.hint_id);
+    if (sig) {
+      const candidates = document.querySelectorAll(
+        'a, button, input, textarea, select, [role="button"], [onclick], [contenteditable]'
+      );
+      let bestEl = null, bestScore = 0;
+
+      for (const candidate of candidates) {
+        if (!isVisible(candidate)) continue;
+        const s = similarity(sig, candidate);
+        if (s > bestScore) {
+          bestScore = s;
+          bestEl = candidate;
+        }
+      }
+
+      // Threshold: need at least 30 points to consider it a match
+      if (bestEl && bestScore >= 30) {
+        return { el: bestEl, healed: true, score: bestScore, originalId: params.hint_id };
+      }
+    }
+  }
+
+  // Text search (unchanged, but wrapped)
   if (params.text) {
     const needle = params.text.toLowerCase();
-    // Priority: buttons/links first, then everything
     for (const scope of [
       'a, button, input[type="submit"], [role="button"]',
       'a, button, input, textarea, select, [role="button"], [onclick]'
     ]) {
       for (const el of document.querySelectorAll(scope)) {
-        if (isVisible(el) && getText(el).toLowerCase().includes(needle)) return el;
+        if (isVisible(el) && getText(el).toLowerCase().includes(needle))
+          return { el, healed: false };
       }
     }
   }
 
-  if (params.selector) return document.querySelector(params.selector);
-  return null;
+  // CSS selector
+  if (params.selector) {
+    const el = document.querySelector(params.selector);
+    if (el) return { el, healed: false };
+  }
+
+  return { el: null, healed: false };
 }
 
 // ─── Actions ────────────────────────────────────────────────────────────────
 
 function handleClick(params) {
-  const el = findElement(params);
+  const { el, healed, score, originalId } = findElement(params);
   if (!el) return { success: false, error: `Not found: ${JSON.stringify(params)}` };
 
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   return new Promise(resolve => {
     setTimeout(() => {
       el.click();
-      resolve({
+      const result = {
         success: true,
         clicked: { tag: el.tagName.toLowerCase(), text: getText(el), href: el.href || null }
-      });
+      };
+      if (healed) result.healed = { originalId, newText: getText(el), confidence: score };
+      resolve(result);
     }, 200);
   });
 }
 
 function handleType(params) {
-  const el = findElement(params);
+  const { el, healed, score, originalId } = findElement(params);
   if (!el) return { success: false, error: `Not found: ${JSON.stringify(params)}` };
 
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -433,7 +519,9 @@ function handleType(params) {
     el.dispatchEvent(new KeyboardEvent('keyup', opts));
   }
 
-  return { success: true, typed: { tag: el.tagName.toLowerCase(), name: el.name, value: el.value } };
+  const result = { success: true, typed: { tag: el.tagName.toLowerCase(), name: el.name, value: el.value } };
+  if (healed) result.healed = { originalId, newText: getText(el), confidence: score };
+  return result;
 }
 
 function handleScroll(params) {
@@ -451,12 +539,20 @@ function handleScroll(params) {
 }
 
 function handleExtract(params) {
-  const el = params.selector ? document.querySelector(params.selector)
-    : params.hint_id ? document.querySelector(`[data-aether-id="${params.hint_id}"]`)
-    : null;
-
-  if (el) return { success: true, text: el.innerText.trim(), html: el.innerHTML };
-  if (params.selector || params.hint_id) return { success: false, error: 'Not found' };
+  if (params.hint_id || params.text) {
+    const { el, healed } = findElement(params);
+    if (el) {
+      const result = { success: true, text: el.innerText.trim(), html: el.innerHTML };
+      if (healed) result.healed = true;
+      return result;
+    }
+    return { success: false, error: 'Not found' };
+  }
+  if (params.selector) {
+    const el = document.querySelector(params.selector);
+    if (el) return { success: true, text: el.innerText.trim(), html: el.innerHTML };
+    return { success: false, error: 'Not found' };
+  }
 
   // Full page extract
   const main = document.querySelector('main, [role="main"], article') || document.body;
