@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Aether - AI Browser Agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The invisible element that connects AI to your browser. MCP-native browser control for AI agents.",
   "permissions": [
     "activeTab",
