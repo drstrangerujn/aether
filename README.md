@@ -18,17 +18,13 @@ Other browser agents fight websites. Aether doesn't.
 
 Instead of building another headless browser, faking fingerprints, or managing stolen cookies, Aether takes a fundamentally different approach — it **inhabits the browser you already use**. A lightweight Chrome extension bridges your real browser to any AI application via the MCP protocol. Your login sessions, cookies, IP, and fingerprint are all real. Websites see a human, because it *is* your browser.
 
-## The Problem
+## Why
 
-Every AI browser agent today faces the same three walls:
+You've tried letting AI control a browser. You know what happens.
 
-**Wall 1: Identity.** You open a headless browser. Every website sees a fresh session — no cookies, no login, no history. You're a stranger. Cloudflare asks you to prove you're human. You fail.
+Headless Chrome opens. No cookies, no login, nothing. You're a stranger to every site. Cloudflare blocks you. So you bolt on stealth plugins, fake the User-Agent, randomize Canvas. It works Tuesday, breaks Thursday. The site updates, you update, nobody wins. And even when you get past the gate, the AI stares at 50,000 tokens of raw DOM and clicks the wrong thing.
 
-**Wall 2: Detection.** You add stealth plugins, spoof User-Agents, randomize Canvas fingerprints. It works until it doesn't. The site updates its detection. You update your spoofing. An arms race with no winner.
-
-**Wall 3: Perception.** You feed the AI a screenshot (expensive, slow) or raw DOM (50,000 tokens of noise). The AI clicks the wrong button, types in the wrong field, misses the popup.
-
-Aether eliminates all three.
+Aether skips all of that. It runs inside the browser you already have open. Your sessions, your cookies, your fingerprint — already there. Nothing to fake, nothing to fight.
 
 ## How
 
