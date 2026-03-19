@@ -1,5 +1,6 @@
 <p align="center">
-  <br>
+  <a href="README_CN.md">中文</a> · English
+  <br><br>
   <strong>A · E · T · H · E · R</strong>
   <br>
   <em>The invisible element that connects AI to your browser.</em>
@@ -62,7 +63,7 @@ No Docker. No cloud. No API keys. One extension, one local server.
 **1. Clone & load the extension**
 
 ```bash
-git clone https://github.com/liuxiyu1992/aether.git
+git clone https://github.com/drstrangerujn/aether.git
 ```
 
 Open `chrome://extensions` → enable Developer Mode → Load Unpacked → select `aether/extension`.
