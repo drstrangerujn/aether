@@ -84,12 +84,14 @@ Add Aether to your Claude Desktop config (`claude_desktop_config.json`):
 | `click` | Click an element by hint ID or text |
 | `type` | Type text into input fields |
 | `screenshot` | Capture the current page |
-| `get_hint_map` | Get structured page perception |
+| `get_hint_map` | Get structured page perception (v2) |
 | `extract` | Extract text content |
 | `scroll` | Scroll the page |
 | `wait_for` | Wait for elements/text/URL changes |
 | `get_tabs` | List open browser tabs |
 | `execute_js` | Run JavaScript in page context |
+| `safe_mode_respond` | Respond to sensitive action approvals |
+| `safe_mode_policy` | View/change Safe Mode policies |
 | `get_audit_log` | View action history |
 
 ## Hint Map
@@ -100,31 +102,55 @@ The Hint Map is Aether's core innovation. Instead of sending raw HTML or screens
 {
   "url": "https://example.com/products",
   "title": "Product Search",
+  "summary": "47 elements across [nav, main, sidebar] 🍪 cookie banner",
   "interactables": [
-    { "id": "h0", "type": "input", "text": "", "placeholder": "Search products..." },
-    { "id": "h1", "type": "button", "text": "Search" },
-    { "id": "h2", "type": "link", "text": "Electronics", "href": "/category/electronics" }
+    { "id": "h0", "type": "input", "region": "main", "priority": 90, "placeholder": "Search..." },
+    { "id": "h1", "type": "button", "region": "main", "priority": 85, "text": "Search" },
+    { "id": "h2", "type": "link", "region": "nav", "priority": 60, "text": "Electronics" }
   ],
   "content": {
     "headings": [{ "level": 1, "text": "Find Your Perfect Product" }],
-    "mainText": "Browse thousands of products..."
+    "semantics": { "price": ["$29.99", "$49.99"], "count": ["128 results"] },
+    "tables": [{ "headers": ["Name", "Price", "Rating"], "rowCount": 25 }]
   },
   "state": {
-    "hasPopup": false,
-    "isLoading": false,
-    "hasLogin": false,
-    "hasCaptcha": false
+    "popup": false, "login": false, "captcha": false, "cookieBanner": true
   }
 }
 ```
 
 This drastically reduces token usage and improves action accuracy.
 
+## Safe Mode
+
+Sensitive actions (payment, delete, send, account changes) are **automatically intercepted** and sent back to the AI client for user approval. Users can set policies per category:
+
+| Decision | Effect |
+|----------|--------|
+| `approve` | Execute this one action |
+| `approve_all` | Always allow this category |
+| `approve_once` | Allow for this session |
+| `reject` | Cancel the action |
+| `reject_always` | Never allow this category |
+
+## As a Skill
+
+Aether ships as a Skill (`skill/SKILL.md`) — a set of instructions that teaches AI agents how to effectively use the browser tools. Drop it into your agent's skills directory:
+
+```bash
+cp -r aether/skill ~/.openclaw/skills/aether
+# or for Claude Code:
+cp -r aether/skill ~/.claude/skills/aether
+```
+
+The skill teaches the agent: Hint Map workflow, Safe Mode approval handling, multi-step patterns (search→filter→extract), popup dismissal, and security rules.
+
 ## Roadmap
 
-- [x] **Phase 1 (MVP)**: Basic navigation, click, type, screenshot, Hint Map v1
-- [ ] **Phase 2**: Smart Wait, Self-Healing, Safe Mode, Audit Log
-- [ ] **Phase 3**: Multi-Profile, Visual Config UI, WebMCP compatibility, Plugin marketplace
+- [x] **Phase 1 (MVP)**: Navigation, click, type, screenshot, Hint Map v1
+- [x] **Phase 2**: Safe Mode, Hint Map v2 (regions, semantics, priority), Audit Log
+- [ ] **Phase 3**: Self-Healing, Smart Wait improvements, Multi-Profile
+- [ ] **Phase 4**: Visual Config UI, WebMCP compatibility, Plugin marketplace
 
 ## Philosophy
 
