@@ -114,6 +114,9 @@ async function handleServerMessage(msg) {
       case 'execute_js':
         result = await cmdExecuteJs(params);
         break;
+      case 'auto_dismiss':
+        result = await cmdAutoDismiss(params);
+        break;
       default:
         result = { error: `Unknown command: ${command}` };
     }
@@ -293,6 +296,17 @@ async function cmdExecuteJs(params) {
     world: 'MAIN'
   });
   return result.result;
+}
+
+// ─── auto_dismiss: Clear roadblocks (cookies, popups, etc) ──────────────
+
+async function cmdAutoDismiss(params = {}) {
+  const tab = await getTargetTab(params);
+  const result = await chrome.tabs.sendMessage(tab.id, {
+    action: 'auto_dismiss',
+    params
+  });
+  return result;
 }
 
 // ─── Initialize ─────────────────────────────────────────────────────────────

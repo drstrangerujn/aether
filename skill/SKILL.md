@@ -94,12 +94,12 @@ get_hint_map()
 → if state.login is false: proceed normally
 ```
 
-### Handle Popups/Cookie Banners
+### Popups, Cookies, Overlays
+`get_hint_map` **automatically dismisses** cookie banners, consent popups, newsletter overlays, and notification prompts before scanning. Check the `dismissed` array in the response to see what was cleared. If something persists:
 ```
-get_hint_map()
-→ if state.popup or state.cookieBanner:
-  → look for dismiss/close/accept button in modal region
-  → click it first, then proceed with main task
+auto_dismiss()        → force another sweep
+get_hint_map()        → check if it's gone
+→ if still there: click the close/dismiss button manually via hint_id
 ```
 
 ## Rules

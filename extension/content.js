@@ -161,10 +161,97 @@ function detectCookieBanner() {
   return Array.from(document.querySelectorAll(sel)).some(isVisible);
 }
 
+// ─── Auto Dismiss — clear common roadblocks ────────────────────────────────
+//
+// Cookie banners, notification prompts, newsletter popups, age gates, etc.
+// These waste agent tokens and block the real task. Kill them on sight.
+
+const DISMISS_BUTTONS = [
+  // Cookie / consent
+  'accept all', 'accept cookies', 'accept', 'agree', 'allow all', 'allow cookies',
+  'got it', 'i agree', 'i understand', 'ok', 'okay', 'continue',
+  'dismiss', 'close', 'no thanks', 'not now', 'maybe later', 'skip',
+  'reject all', 'reject', 'deny', 'decline',         // privacy-first: try reject first
+  // Chinese
+  '同意', '接受', '全部接受', '知道了', '关闭', '我同意', '不再提醒',
+  '好的', '确定', '跳过', '以后再说', '暂不',
+];
+
+const DISMISS_CONTAINERS = [
+  '[class*="cookie"]', '[id*="cookie"]',
+  '[class*="consent"]', '[id*="consent"]',
+  '[class*="gdpr"]', '[id*="gdpr"]',
+  '[class*="notice"]', '[id*="notice-banner"]',
+  '[class*="newsletter"]', '[class*="subscribe-popup"]',
+  '[class*="notification-prompt"]',
+  '[role="dialog"]', '[role="alertdialog"]',
+  '.modal', '.popup', '.overlay',
+];
+
+function autoDismiss() {
+  const dismissed = [];
+
+  // Find visible roadblock containers
+  for (const sel of DISMISS_CONTAINERS) {
+    for (const container of document.querySelectorAll(sel)) {
+      if (!isVisible(container)) continue;
+
+      // Look for dismiss buttons inside
+      const buttons = container.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]');
+      for (const btn of buttons) {
+        const text = getText(btn).toLowerCase();
+        // Try reject/decline first (privacy-first), then accept/dismiss
+        const match = DISMISS_BUTTONS.find(d => text.includes(d));
+        if (match) {
+          btn.click();
+          dismissed.push({ text: getText(btn), container: sel, matched: match });
+          break; // one click per container
+        }
+      }
+
+      // Fallback: look for close/X button by aria-label or class
+      if (dismissed.length === 0) {
+        const closeBtn = container.querySelector(
+          '[aria-label="Close"], [aria-label="close"], [aria-label="关闭"], ' +
+          '.close, .close-btn, [class*="close"], [class*="dismiss"]'
+        );
+        if (closeBtn && isVisible(closeBtn)) {
+          closeBtn.click();
+          dismissed.push({ text: 'X', container: sel, matched: 'close-button' });
+        }
+      }
+    }
+  }
+
+  // Also dismiss browser notification permission prompts (can't click them, but can detect)
+  // and remove fixed/sticky overlays that cover the page
+  for (const el of document.querySelectorAll('*')) {
+    const style = getComputedStyle(el);
+    if (style.position === 'fixed' && style.zIndex > 9000 && el.offsetHeight < 300) {
+      const text = (el.innerText || '').toLowerCase();
+      if (DISMISS_BUTTONS.some(d => text.includes(d))) {
+        const btn = el.querySelector('button, a, [role="button"]');
+        if (btn) {
+          btn.click();
+          dismissed.push({ text: getText(btn), container: 'high-z-fixed', matched: 'overlay' });
+        }
+      }
+    }
+  }
+
+  return dismissed;
+}
+
 // ─── Hint Map v2 Generator ──────────────────────────────────────────────────
 
 function generateHintMap(options = {}) {
   const detail = options.detail_level || 'standard';
+
+  // Auto-dismiss roadblocks before scanning (unless explicitly disabled)
+  let dismissed = [];
+  if (options.auto_dismiss !== false) {
+    dismissed = autoDismiss();
+  }
 
   const map = {
     url: location.href,
@@ -182,6 +269,7 @@ function generateHintMap(options = {}) {
       captcha: detectCaptcha(),
       cookieBanner: detectCookieBanner(),
     },
+    dismissed,   // what was auto-cleared this round
     interactables: [],
   };
 
@@ -401,12 +489,13 @@ function handleWaitFor(params) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const { action, params } = msg;
   const handlers = {
-    get_hint_map: () => generateHintMap(params),
-    click:        () => handleClick(params),
-    type:         () => handleType(params),
-    scroll:       () => handleScroll(params),
-    extract:      () => handleExtract(params),
-    wait_for:     () => handleWaitFor(params),
+    get_hint_map:  () => generateHintMap(params),
+    click:         () => handleClick(params),
+    type:          () => handleType(params),
+    scroll:        () => handleScroll(params),
+    extract:       () => handleExtract(params),
+    wait_for:      () => handleWaitFor(params),
+    auto_dismiss:  () => ({ dismissed: autoDismiss() }),
   };
   const fn = handlers[action];
   if (!fn) { sendResponse({ error: `Unknown: ${action}` }); return true; }

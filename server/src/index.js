@@ -244,13 +244,25 @@ server.tool(
 
 server.tool(
   'get_hint_map',
-  'Get the Hint Map — structured page perception. Returns interactable elements with IDs, content summary, page regions, and semantic data. Call this FIRST before interacting with any page.',
+  'Get the Hint Map — structured page perception. Automatically dismisses cookie banners and popups before scanning. Returns interactable elements with IDs, content summary, page regions, and semantic data. Call this FIRST before interacting with any page.',
   {
     detail_level: z.enum(['minimal', 'standard', 'full']).optional()
-      .describe('minimal: interactables only | standard: + content + regions | full: + complete text')
+      .describe('minimal: interactables only | standard: + content + regions | full: + complete text'),
+    auto_dismiss: z.boolean().optional()
+      .describe('Auto-dismiss cookie banners, popups, overlays before scanning (default: true)')
   },
   async (params) => {
     const result = await sendToExtension('get_hint_map', params);
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.tool(
+  'auto_dismiss',
+  'Dismiss cookie banners, consent popups, notification prompts, newsletter overlays, and other common roadblocks. Called automatically by get_hint_map, but can also be called manually.',
+  {},
+  async () => {
+    const result = await sendToExtension('auto_dismiss');
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
 );
