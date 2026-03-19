@@ -61,7 +61,7 @@ async function main() {
   // Register
   ws.send(JSON.stringify({ type: 'register', client: 'test', version: '0.1.0' }));
   await sleep(500);
-  assert(serverStderr.includes('Extension'), 'Extension registration acknowledged');
+  assert(serverStderr.includes('connected'), 'Extension registration acknowledged');
 
   // 3. Set up mock responder
   ws.on('message', (data) => {

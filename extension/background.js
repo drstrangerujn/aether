@@ -27,8 +27,17 @@ function connect() {
   ws.onopen = () => {
     console.log('[Aether] Connected to MCP Server');
     clearReconnectTimer();
-    // Register with server
-    send({ type: 'register', client: 'extension', version: '0.1.0' });
+    // Register with server, including profile info
+    chrome.storage.local.get(['profileName'], (data) => {
+      send({
+        type: 'register',
+        client: 'extension',
+        version: '0.4.0',
+        profileId: chrome.runtime.id, // unique per profile
+        profileName: data.profileName || 'default',
+        userAgent: navigator.userAgent,
+      });
+    });
     updateBadge('ON', '#2E75B6');
   };
 

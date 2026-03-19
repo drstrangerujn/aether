@@ -161,6 +161,27 @@ page_to_pdf()        → export page as PDF for user to review
 - `page_to_pdf` is useful for archiving results the user wants to keep
 - `full_screenshot` captures below the fold — things you'd need to scroll to see
 
+## Multi-Profile
+
+Users can have multiple Chrome profiles (work, personal, shopping). Each has independent cookies and login sessions.
+
+### Setup
+```
+profile_list()                                    → see all connected profiles
+profile_label({ profile_id: "abc", label: "work" })  → name it
+profile_domain({ action: "add", profile_id: "abc", domain: "gmail.com" })  → associate domains
+```
+
+### Usage
+```
+navigate({ url: "https://taobao.com" })
+→ if response contains "Tip: domain matches profile shopping":
+  profile_switch({ label: "shopping" })
+  → now all commands go to the shopping profile's browser
+```
+
+When a domain is associated with a profile, `navigate` will suggest switching. The user decides — never auto-switch without asking.
+
 ## Self-Healing
 
 When you use a `hint_id` that no longer exists (page refreshed, layout changed, dynamic content), Aether doesn't just fail. It remembers what that element looked like (text, type, region, attributes) and searches for the closest match on the current page.

@@ -14,17 +14,22 @@ import {
   startRecording, recordStep, stopRecording, cancelRecording, isRecording,
   findPath, markReplayed, listPaths, deletePath,
 } from './cache.js';
+import {
+  registerConnection, unregisterConnection, getConnection, getActiveConnections,
+  labelProfile, addDomain, removeDomain, suggestProfile,
+  listProfiles as listAllProfiles, deleteProfile,
+} from './profiles.js';
 
 const WS_PORT = 3899;
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
-let extensionWs = null;
+let activeProfileId = null;  // currently selected profile
 let messageId = 0;
 const pendingCommands = new Map();
 const auditLog = [];
-let lastHintMap = null;  // track latest page state for cache fingerprinting
+let lastHintMap = null;
 
 // ─── Safe Mode ──────────────────────────────────────────────────────────────
 //
@@ -100,16 +105,25 @@ wss.on('listening', () => {
 });
 
 wss.on('connection', (ws) => {
-  console.error('[Aether] Extension connected');
-  extensionWs = ws;
+  let profileId = null;
 
   ws.on('message', (data) => {
     try {
       const msg = JSON.parse(data.toString());
+
       if (msg.type === 'register') {
-        console.error(`[Aether] Extension v${msg.version}`);
+        profileId = msg.profileId || msg.client || 'default';
+        const profile = registerConnection(profileId, ws, {
+          version: msg.version,
+          label: msg.profileName || profileId,
+          userAgent: msg.userAgent,
+        });
+        // Auto-select first profile if none active
+        if (!activeProfileId) activeProfileId = profileId;
+        console.error(`[Aether] Profile "${profile.label}" connected (${profileId})`);
         return;
       }
+
       if (msg.type === 'response' && msg.id) {
         const p = pendingCommands.get(msg.id);
         if (p) {
@@ -124,9 +138,17 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    console.error('[Aether] Extension disconnected');
-    extensionWs = null;
-    for (const [, p] of pendingCommands) {
+    if (profileId) {
+      console.error(`[Aether] Profile "${profileId}" disconnected`);
+      unregisterConnection(profileId);
+      if (activeProfileId === profileId) {
+        // Switch to next available
+        const active = getActiveConnections();
+        activeProfileId = active.length > 0 ? active[0].id : null;
+      }
+    }
+    // Reject pending commands for this connection
+    for (const [id, p] of pendingCommands) {
       clearTimeout(p.timer);
       p.reject(new Error('Extension disconnected'));
     }
@@ -138,8 +160,14 @@ wss.on('connection', (ws) => {
 
 function sendToExtension(command, params = {}, timeout = 30000) {
   return new Promise((resolve, reject) => {
+    const conn = activeProfileId ? getConnection(activeProfileId) : null;
+    const extensionWs = conn?.ws;
     if (!extensionWs || extensionWs.readyState !== 1) {
-      return reject(new Error('Extension not connected. Install the Aether Chrome extension and refresh.'));
+      const profiles = getActiveConnections();
+      if (profiles.length === 0) {
+        return reject(new Error('No extension connected. Install Aether and refresh.'));
+      }
+      return reject(new Error(`Profile "${activeProfileId}" not connected. Active: ${profiles.map(p => p.label).join(', ')}`));
     }
 
     const id = ++messageId;
@@ -248,8 +276,15 @@ server.tool(
     timeout: z.number().optional().describe('Page load timeout in ms (default: 30000)')
   },
   async ({ url, newTab, timeout }) => {
+    // Smart profile suggestion
+    const suggested = suggestProfile(url);
+    const hint = (suggested && suggested.id !== activeProfileId)
+      ? `\n⚡ Tip: domain matches profile "${suggested.label}". Use profile_switch to switch.`
+      : '';
+
     const result = await sendToExtension('navigate', { url, newTab, timeout });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    const text = JSON.stringify(result, null, 2) + hint;
+    return { content: [{ type: 'text', text }] };
   }
 );
 
@@ -457,6 +492,70 @@ server.tool(
   'Run JavaScript in page context. Always requires Safe Mode approval.',
   { code: z.string().describe('JavaScript code') },
   async (params) => guardedExecute('execute_js', params)
+);
+
+// ── Profile tools ──
+
+server.tool(
+  'profile_list',
+  'List all browser profiles (online and offline). Each profile has independent cookies, logins, and browsing data.',
+  {},
+  async () => {
+    const profiles = listAllProfiles();
+    return { content: [{ type: 'text', text: JSON.stringify({
+      active: activeProfileId,
+      profiles
+    }, null, 2) }] };
+  }
+);
+
+server.tool(
+  'profile_switch',
+  'Switch to a different browser profile. Use the profile label or ID. Commands will be sent to this profile\'s browser.',
+  {
+    label: z.string().describe('Profile label (e.g. "work", "shopping") or ID')
+  },
+  async ({ label }) => {
+    // Try by label first
+    const active = getActiveConnections();
+    const match = active.find(p =>
+      p.label.toLowerCase() === label.toLowerCase() || p.id === label
+    );
+
+    if (match) {
+      activeProfileId = match.id;
+      return { content: [{ type: 'text', text: `Switched to profile "${match.label}" (${match.id})` }] };
+    }
+
+    return { content: [{ type: 'text', text: `Profile "${label}" not found or not online. Available: ${active.map(p => p.label).join(', ') || 'none'}` }] };
+  }
+);
+
+server.tool(
+  'profile_label',
+  'Label a browser profile for easy reference. E.g. label the default profile as "work" or "shopping".',
+  {
+    profile_id: z.string().describe('Profile ID to label'),
+    label: z.string().describe('New label (e.g. "work", "personal", "shopping")')
+  },
+  async ({ profile_id, label }) => {
+    const result = labelProfile(profile_id, label);
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.tool(
+  'profile_domain',
+  'Associate a domain with a profile. When navigating to this domain, Aether will suggest switching to the associated profile.',
+  {
+    action: z.enum(['add', 'remove']).describe('Add or remove domain association'),
+    profile_id: z.string().describe('Profile ID'),
+    domain: z.string().describe('Domain (e.g. "taobao.com", "gmail.com")')
+  },
+  async ({ action, profile_id, domain }) => {
+    const result = action === 'add' ? addDomain(profile_id, domain) : removeDomain(profile_id, domain);
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  }
 );
 
 // ── Safe Mode tools ──
