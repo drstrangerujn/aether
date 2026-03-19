@@ -141,21 +141,34 @@ The AI presents this to you. You decide. Categories: **payment**, **delete**, **
 
 Set `approve_all` once for a category you trust, and it never asks again. Set `reject_always` for categories you want locked down permanently. Your policies, your rules.
 
-## Tools
+## Tools (22)
 
 | | Tool | What it does |
 |-|------|-------------|
-| 👁 | `get_hint_map` | Structured page perception. **Always call first.** |
-| 👁 | `screenshot` | Visual capture |
+| 👁 | `get_hint_map` | Structured page perception. **Always call first.** Auto-dismisses popups. |
+| 👁 | `screenshot` | Viewport capture |
+| 👁 | `full_screenshot` | Full page capture (beyond viewport, for headless) |
 | 👁 | `extract` | Pull text from elements |
-| ✋ | `navigate` | Open URL (always safe) |
-| ✋ | `click` | Click by hint ID or text. Sensitive targets → Safe Mode |
+| 👁 | `detect_qr` | Find & extract QR codes (login, payment) |
+| ✋ | `navigate` | Open URL (with smart profile suggestion) |
+| ✋ | `click` | Click by hint ID or text. Self-heals if element moved. |
 | ✋ | `type` | Type into inputs. `pressEnter` to submit |
 | ✋ | `scroll` | Scroll page |
 | ✋ | `wait_for` | Wait for elements / text / URL changes |
+| ✋ | `auto_dismiss` | Kill cookie banners, popups, overlays |
 | ✋ | `execute_js` | Run JS in page. **Always requires approval** |
 | 🔒 | `safe_mode_respond` | Handle approval requests |
 | 🔒 | `safe_mode_policy` | View/change policies |
+| 🧠 | `cache_start` | Start recording a replayable workflow |
+| 🧠 | `cache_stop` | Save recorded workflow |
+| 🧠 | `cache_replay` | Replay a saved workflow (skip AI inference) |
+| 🧠 | `cache_list` | List saved workflows |
+| 🧠 | `cache_delete` | Delete a saved workflow |
+| 👤 | `profile_list` | List browser profiles |
+| 👤 | `profile_switch` | Switch active profile |
+| 👤 | `profile_label` | Name a profile |
+| 👤 | `profile_domain` | Associate domains with profiles |
+| 📄 | `page_to_pdf` | Export page as PDF (for headless) |
 | 📋 | `get_tabs` | List open tabs |
 | 📋 | `get_audit_log` | Full action history |
 
@@ -181,22 +194,28 @@ cp -r aether/skill ~/.claude/skills/aether
 | Open source | ✅ MIT | ✅ | ✅ | ❌ |
 | Page perception | ✅ Hint Map | ❌ Raw DOM | ⚠️ Partial | ❓ Unknown |
 | Safe Mode | ✅ Built-in | ❌ | ❌ | ❌ |
-| Non-dev friendly | ✅ Skill + GUI planned | ❌ Code only | ❌ Code only | ✅ |
+| Self-Healing | ✅ Auto-recover | ❌ | ✅ | ❌ |
+| Path Cache | ✅ Record & replay | ❌ | ✅ Cache | ❌ |
+| Headless support | ✅ QR + PDF + full screenshot | ❌ | ❌ | ❌ |
+| Multi-Profile | ✅ Per-task switching | ❌ | ❌ | ❌ |
 
 ## Project Structure
 
 ```
 aether/
-├── extension/          Chrome Extension (Manifest V3)
-│   ├── content.js      Hint Map v2 + page actions
-│   ├── background.js   WebSocket bridge
-│   └── popup.html      Connection status UI
+├── extension/                Chrome Extension (Manifest V3)
+│   ├── content.js            Hint Map v2 + Self-Healing + Auto Dismiss + QR detection
+│   ├── background.js         WebSocket bridge + CDP (PDF, full screenshot, QR capture)
+│   └── popup.html            Connection status UI
 ├── server/
-│   └── src/index.js    MCP Server + Safe Mode engine
+│   └── src/
+│       ├── index.js          MCP Server + Safe Mode + 22 tools
+│       ├── cache.js           Path Cache engine
+│       └── profiles.js        Multi-Profile manager
 ├── skill/
-│   └── SKILL.md        AI agent instructions
+│   └── SKILL.md              AI agent instructions
 └── scripts/
-    └── test-e2e.js     15/15 tests passing
+    └── test-e2e.js           15/15 tests passing
 ```
 
 ## Roadmap
@@ -204,10 +223,13 @@ aether/
 - [x] Navigation, click, type, screenshot, extract, scroll
 - [x] Hint Map v2: regions, priority, semantics, dedup
 - [x] Safe Mode: approval workflow, per-category policies
+- [x] Auto Dismiss: cookie banners, popups, overlays
+- [x] Path Cache: record & replay multi-step workflows
+- [x] Self-Healing: auto-recover when elements move
+- [x] Headless: QR detection, PDF export, full-page screenshot
+- [x] Multi-Profile: per-task browser profile switching
 - [x] Skill format for OpenClaw / Claude Code
-- [ ] Self-Healing: auto-adapt when page layout changes
-- [ ] Multi-Profile: switch browser profiles per task
-- [ ] Visual config UI for non-developers
+- [ ] npm publish + ClawHub submission
 - [ ] WebMCP compatibility layer
 - [ ] Plugin marketplace for site-specific Hint Map optimizations
 

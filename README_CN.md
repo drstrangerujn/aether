@@ -140,21 +140,34 @@ AI 会把这个请求展示给你，由你决定。分类：**支付（payment�
 
 对你信任的类别设一次 `approve_all`，以后就不再问了。对你想锁死的类别设 `reject_always`，永远拦截。你的策略，你做主。
 
-## 工具集
+## 工具集（22 个）
 
 | | 工具 | 功能 |
 |-|------|------|
-| 👁 | `get_hint_map` | 结构化页面感知。**每次操作前必须先调用。** |
-| 👁 | `screenshot` | 截图 |
+| 👁 | `get_hint_map` | 结构化页面感知。**每次操作前必须先调用。**自动清理弹窗。 |
+| 👁 | `screenshot` | 视口截图 |
+| 👁 | `full_screenshot` | 全页截图（超出视口部分也拍，服务器必备） |
 | 👁 | `extract` | 提取元素文本 |
-| ✋ | `navigate` | 打开 URL（永远安全，不触发审批） |
-| ✋ | `click` | 点击元素。敏感目标 → 触发 Safe Mode |
+| 👁 | `detect_qr` | 检测并提取二维码（登录、支付） |
+| ✋ | `navigate` | 打开 URL（带智能 Profile 推荐） |
+| ✋ | `click` | 点击元素。元素消失时自动恢复（Self-Healing） |
 | ✋ | `type` | 输入文字。`pressEnter` 可提交表单 |
 | ✋ | `scroll` | 滚动页面 |
 | ✋ | `wait_for` | 等待元素 / 文本 / URL 变化 |
+| ✋ | `auto_dismiss` | 清理 cookie 横幅、弹窗、遮罩层 |
 | ✋ | `execute_js` | 执行 JS。**永远需要审批** |
 | 🔒 | `safe_mode_respond` | 处理审批请求 |
 | 🔒 | `safe_mode_policy` | 查看/修改审批策略 |
+| 🧠 | `cache_start` | 开始录制可重放的操作流程 |
+| 🧠 | `cache_stop` | 保存录制的流程 |
+| 🧠 | `cache_replay` | 重放已保存的流程（跳过 AI 推理） |
+| 🧠 | `cache_list` | 列出已保存的流程 |
+| 🧠 | `cache_delete` | 删除已保存的流程 |
+| 👤 | `profile_list` | 列出浏览器配置文件 |
+| 👤 | `profile_switch` | 切换活跃配置文件 |
+| 👤 | `profile_label` | 给配置文件起名 |
+| 👤 | `profile_domain` | 把域名关联到配置文件 |
+| 📄 | `page_to_pdf` | 导出页面为 PDF（服务器用） |
 | 📋 | `get_tabs` | 列出已打开的标签页 |
 | 📋 | `get_audit_log` | 查看完整操作日志 |
 
@@ -180,22 +193,28 @@ cp -r aether/skill ~/.claude/skills/aether
 | 开源 | ✅ MIT | ✅ | ✅ | ❌ 闭源 |
 | 页面感知 | ✅ Hint Map | ❌ 原始 DOM | ⚠️ 部分支持 | ❓ 未知 |
 | 安全模式 | ✅ 内置 | ❌ | ❌ | ❌ |
-| 非开发者友好 | ✅ Skill + GUI 规划中 | ❌ 需写代码 | ❌ 需写代码 | ✅ |
+| 自愈能力 | ✅ 元素消失自动恢复 | ❌ | ✅ | ❌ |
+| 路径缓存 | ✅ 录制 & 重放 | ❌ | ✅ 有缓存 | ❌ |
+| 无头服务器 | ✅ QR + PDF + 全页截图 | ❌ | ❌ | ❌ |
+| 多配置文件 | ✅ 按任务切换 | ❌ | ❌ | ❌ |
 
 ## 项目结构
 
 ```
 aether/
-├── extension/          Chrome 插件（Manifest V3）
-│   ├── content.js      Hint Map v2 + 页面操作
-│   ├── background.js   WebSocket 桥接层
-│   └── popup.html      连接状态界面
+├── extension/                Chrome 插件（Manifest V3）
+│   ├── content.js            Hint Map v2 + Self-Healing + Auto Dismiss + QR 检测
+│   ├── background.js         WebSocket 桥接 + CDP（PDF、全页截图、QR 抓取）
+│   └── popup.html            连接状态界面
 ├── server/
-│   └── src/index.js    MCP Server + Safe Mode 引擎
+│   └── src/
+│       ├── index.js          MCP Server + Safe Mode + 22 个工具
+│       ├── cache.js           路径缓存引擎
+│       └── profiles.js        多配置文件管理
 ├── skill/
-│   └── SKILL.md        AI agent 使用指南
+│   └── SKILL.md              AI agent 使用指南
 └── scripts/
-    └── test-e2e.js     15/15 测试通过
+    └── test-e2e.js           15/15 测试通过
 ```
 
 ## 路线图
@@ -203,10 +222,13 @@ aether/
 - [x] 导航、点击、输入、截图、提取、滚动
 - [x] Hint Map v2：区域识别、优先级排序、语义提取、去重
 - [x] Safe Mode：审批流程、按类别策略管理
+- [x] Auto Dismiss：cookie 横幅、弹窗、遮罩自动清理
+- [x] 路径缓存：录制 & 重放多步操作流程
+- [x] Self-Healing：元素消失/移动时自动恢复
+- [x] 无头服务器支持：QR 检测、PDF 导出、全页截图
+- [x] Multi-Profile：按任务切换浏览器配置文件
 - [x] Skill 格式，兼容 OpenClaw / Claude Code
-- [ ] Self-Healing：页面布局变化时自动适应
-- [ ] Multi-Profile：按任务切换浏览器配置文件
-- [ ] 可视化配置界面（非开发者可用）
+- [ ] npm 发布 + ClawHub 提交
 - [ ] WebMCP 兼容层
 - [ ] 插件市场：社区贡献特定网站的 Hint Map 优化
 
