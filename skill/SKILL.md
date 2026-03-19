@@ -102,6 +102,37 @@ get_hint_map()        → check if it's gone
 → if still there: click the close/dismiss button manually via hint_id
 ```
 
+## Path Cache
+
+Aether can record and replay multi-step workflows. This saves tokens and time for repetitive tasks.
+
+### Recording a new path
+```
+get_hint_map()
+cache_start({ label: "search products" })
+→ execute your steps normally (navigate, type, click, etc.)
+→ all steps are recorded automatically
+cache_stop()
+```
+
+### Replaying a cached path
+```
+get_hint_map()
+cache_replay({ label: "search products" })
+→ if found: steps execute automatically, no AI inference needed
+→ if a step fails (page changed): returns remaining steps for you to handle
+→ if not found: execute manually, then record with cache_start/cache_stop
+```
+
+### Managing paths
+```
+cache_list()                          → see all saved paths
+cache_list({ domain: "taobao.com" }) → filter by site
+cache_delete({ key: "..." })         → remove a path
+```
+
+**When to use:** any workflow you'll repeat more than once on the same site. Product searches, report exports, form submissions, data extraction routines.
+
 ## Rules
 
 1. **Never type passwords or sensitive credentials.** If a login form appears, tell the user to do it manually.

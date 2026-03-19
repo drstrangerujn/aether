@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Aether MCP Server v0.2.0
+ * Aether MCP Server v0.3.0
  *
  *   AI App <──MCP/stdio──> Aether Server <──WebSocket──> Chrome Extension
  */
@@ -10,9 +10,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { WebSocketServer } from 'ws';
 import { z } from 'zod';
+import {
+  startRecording, recordStep, stopRecording, cancelRecording, isRecording,
+  findPath, markReplayed, listPaths, deletePath,
+} from './cache.js';
 
 const WS_PORT = 3899;
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 // ─── State ──────────────────────────────────────────────────────────────────
 
@@ -20,6 +24,7 @@ let extensionWs = null;
 let messageId = 0;
 const pendingCommands = new Map();
 const auditLog = [];
+let lastHintMap = null;  // track latest page state for cache fingerprinting
 
 // ─── Safe Mode ──────────────────────────────────────────────────────────────
 //
@@ -210,6 +215,12 @@ async function guardedExecute(command, params) {
 
   // Safe action — execute directly
   const result = await sendToExtension(command, params);
+
+  // Auto-record if a recording session is active
+  if (isRecording()) {
+    recordStep(command, params, lastHintMap);
+  }
+
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
 
@@ -253,6 +264,8 @@ server.tool(
   },
   async (params) => {
     const result = await sendToExtension('get_hint_map', params);
+    lastHintMap = result;  // track for cache fingerprinting
+    if (isRecording()) recordStep('get_hint_map', params, result);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
 );
@@ -452,6 +465,117 @@ server.tool(
           }]
         };
     }
+  }
+);
+
+// ── Path Cache tools ──
+
+server.tool(
+  'cache_start',
+  'Start recording a reusable action path. Call this before executing a multi-step task. Next time the same task is needed on the same site, cache_replay can execute it instantly without AI inference.',
+  {
+    label: z.string().describe('Short task label, e.g. "search products", "export report"')
+  },
+  async ({ label }) => {
+    if (!lastHintMap) {
+      return { content: [{ type: 'text', text: 'Call get_hint_map first so the cache knows what page you are on.' }] };
+    }
+    const result = startRecording(label, lastHintMap);
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.tool(
+  'cache_stop',
+  'Stop recording and save the current action path. The path can be replayed later with cache_replay.',
+  {},
+  async () => {
+    const result = stopRecording();
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.tool(
+  'cache_replay',
+  'Replay a previously recorded action path. Executes each step in sequence, verifying page state between steps. If the page has changed too much, stops and returns remaining steps for the AI to handle manually.',
+  {
+    label: z.string().describe('Task label to search for'),
+  },
+  async ({ label }) => {
+    if (!lastHintMap) {
+      return { content: [{ type: 'text', text: 'Call get_hint_map first.' }] };
+    }
+    const match = findPath(label, lastHintMap);
+    if (!match.found) {
+      return { content: [{ type: 'text', text: JSON.stringify({ cached: false, message: 'No matching path found. Execute manually and use cache_start/cache_stop to record it.' }, null, 2) }] };
+    }
+
+    // Replay steps one by one
+    const results = [];
+    let failedAt = -1;
+
+    for (let i = 0; i < match.path.steps.length; i++) {
+      const step = match.path.steps[i];
+      try {
+        // Skip get_hint_map steps during replay (we verify differently)
+        if (step.command === 'get_hint_map') {
+          results.push({ step: i, command: step.command, skipped: true });
+          continue;
+        }
+        const result = await sendToExtension(step.command, step.params);
+        results.push({ step: i, command: step.command, success: true });
+        // Brief pause between steps for page to settle
+        await new Promise(r => setTimeout(r, 500));
+      } catch (e) {
+        failedAt = i;
+        results.push({ step: i, command: step.command, error: e.message });
+        break;
+      }
+    }
+
+    if (failedAt === -1) {
+      markReplayed(match.key);
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          cached: true,
+          key: match.key,
+          totalSteps: match.path.steps.length,
+          executed: results,
+          ...(failedAt >= 0 ? {
+            failedAt,
+            remaining: match.path.steps.slice(failedAt).map(s => ({
+              command: s.command, params: s.params
+            }))
+          } : { complete: true })
+        }, null, 2)
+      }]
+    };
+  }
+);
+
+server.tool(
+  'cache_list',
+  'List all cached action paths, optionally filtered by domain.',
+  {
+    domain: z.string().optional().describe('Filter by domain (e.g. "taobao.com")')
+  },
+  async ({ domain }) => {
+    return { content: [{ type: 'text', text: JSON.stringify(listPaths(domain), null, 2) }] };
+  }
+);
+
+server.tool(
+  'cache_delete',
+  'Delete a cached action path.',
+  {
+    key: z.string().describe('Path key from cache_list')
+  },
+  async ({ key }) => {
+    return { content: [{ type: 'text', text: JSON.stringify(deletePath(key), null, 2) }] };
   }
 );
 

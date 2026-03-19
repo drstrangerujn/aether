@@ -1,6 +1,6 @@
 {
   "name": "aether-browser",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The invisible element that connects AI to your browser. MCP-native browser control for AI agents.",
   "main": "src/index.js",
   "bin": {
