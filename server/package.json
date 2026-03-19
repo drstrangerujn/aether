@@ -19,10 +19,12 @@
     "chrome",
     "extension"
   ],
+  "type": "module",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "ws": "^8.16.0"
+    "ws": "^8.16.0",
+    "zod": "^3.23.0"
   },
   "engines": {
     "node": ">=18.0.0"
