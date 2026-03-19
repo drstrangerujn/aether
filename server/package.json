@@ -1,0 +1,30 @@
+{
+  "name": "aether-browser",
+  "version": "0.1.0",
+  "description": "The invisible element that connects AI to your browser. MCP-native browser control for AI agents.",
+  "main": "src/index.js",
+  "bin": {
+    "aether-server": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "browser",
+    "ai",
+    "agent",
+    "automation",
+    "chrome",
+    "extension"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ws": "^8.16.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
