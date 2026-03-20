@@ -16,7 +16,7 @@
 
 Other browser agents fight websites. Aether doesn't.
 
-Instead of building another headless browser, faking fingerprints, or managing stolen cookies, Aether takes a fundamentally different approach — it **inhabits the browser you already use**. A lightweight Chrome extension bridges your real browser to any AI application via the MCP protocol. Your login sessions, cookies, IP, and fingerprint are all real. Websites see a human, because it *is* your browser.
+Instead of faking fingerprints or managing headless browsers, Aether uses **Playwright** to drive a real Chromium instance with your saved sessions. One `npm install`, one command. No Chrome extension, no WebSocket relay, no manual setup. It runs headless on a VPS or headed on your desktop — same code, same MCP tools.
 
 ## Why
 
@@ -24,50 +24,59 @@ You've tried letting AI control a browser. You know what happens.
 
 Headless Chrome opens. No cookies, no login, nothing. You're a stranger to every site. Cloudflare blocks you. So you bolt on stealth plugins, fake the User-Agent, randomize Canvas. It works Tuesday, breaks Thursday. The site updates, you update, nobody wins. And even when you get past the gate, the AI stares at 50,000 tokens of raw DOM and clicks the wrong thing.
 
-Aether skips all of that. It runs inside the browser you already have open. Your sessions, your cookies, your fingerprint — already there. Nothing to fake, nothing to fight.
+Aether skips all of that. Playwright launches a real browser. Pass `--storage-state` to restore your sessions. The AI sees a **Hint Map** — a structured perception of the page in 200-800 tokens — not raw DOM.
 
 ## How
 
 ```
 ┌──────────────────────────────────────────┐
-│  Your Real Browser                        │
+│  Chromium (Playwright)                    │
 │                                          │
-│  ✓ Your logins    ✓ Your cookies         │
-│  ✓ Your IP        ✓ Your fingerprint     │
+│  ✓ Real rendering   ✓ Saved sessions     │
+│  ✓ Headless / VPS   ✓ Headed / desktop   │
 │                                          │
 │  ┌──────────────────────────────────┐    │
-│  │ Aether Extension (< 30KB)       │    │
+│  │ Injected Script (auto-loaded)   │    │
 │  │  · Hint Map — page perception   │    │
-│  │  · Safe Mode — action gating    │    │
+│  │  · Self-Healing — auto-recover  │    │
+│  │  · Auto Dismiss — kill popups   │    │
 │  └────────────┬─────────────────────┘    │
 └───────────────┼──────────────────────────┘
-                │ WebSocket (local only)
+                │ Playwright (in-process)
 ┌───────────────┼──────────────────────────┐
 │ Aether MCP Server                         │
-│  · 13 tools · Audit log · Policy engine  │
+│  · 20 tools · Safe Mode · Path Cache     │
 └───────────────┼──────────────────────────┘
                 │ MCP (stdio)
 ┌───────────────┼──────────────────────────┐
-│ Any AI: Claude · OpenClaw · GPT · Custom │
+│ Any AI: Claude · GPT · Custom            │
 └──────────────────────────────────────────┘
 ```
 
-No Docker. No cloud. No API keys. One extension, one local server.
+No Docker. No cloud. No API keys. One `npm install`.
 
 ## Quick Start
 
-**1. Clone & load the extension**
+**1. Install**
 
 ```bash
 git clone https://github.com/drstrangerujn/aether.git
+cd aether/server && npm install
 ```
 
-Open `chrome://extensions` → enable Developer Mode → Load Unpacked → select `aether/extension`.
+Playwright auto-installs Chromium on `npm install`.
 
 **2. Start the server**
 
 ```bash
-cd aether/server && npm install && npm start
+# Headless (VPS / CI)
+npm start
+
+# Headed (see the browser)
+npm run start:headed
+
+# Restore saved sessions
+node src/index.js --storage-state ~/.aether/session.json
 ```
 
 **3. Connect your AI**
@@ -85,9 +94,19 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
-OpenClaw: copy `aether/skill/` to `~/.openclaw/skills/aether`.
+That's it. No extension to load, no `chrome://extensions`, no Developer Mode.
 
-The extension badge turns **ON** (blue) when connected. That's it.
+**CLI flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--headless` | on | Run headless (no GUI) |
+| `--headed` | off | Show the browser window |
+| `--viewport 1920x1080` | 1280x800 | Browser viewport size |
+| `--storage-state path` | — | Restore cookies/sessions from file |
+| `--cdp ws://...` | — | Connect to an existing browser via CDP |
+| `--locale zh-CN` | zh-CN | Browser locale |
+| `--user-agent "..."` | — | Custom User-Agent |
 
 ## Hint Map
 
@@ -139,18 +158,18 @@ When the AI tries to click "Delete Account" or "Confirm Payment", Aether interce
 
 The AI presents this to you. You decide. Categories: **payment**, **delete**, **send**, **account**, **download**, **code_execution**.
 
-Set `approve_all` once for a category you trust, and it never asks again. Set `reject_always` for categories you want locked down permanently. Your policies, your rules.
+Set `approve_all` once for a category you trust, and it never asks again. Set `reject_always` for categories you want locked down permanently.
 
-## Tools (22)
+## Tools (20)
 
 | | Tool | What it does |
 |-|------|-------------|
 | 👁 | `get_hint_map` | Structured page perception. **Always call first.** Auto-dismisses popups. |
 | 👁 | `screenshot` | Viewport capture |
-| 👁 | `full_screenshot` | Full page capture (beyond viewport, for headless) |
+| 👁 | `full_screenshot` | Full page capture |
 | 👁 | `extract` | Pull text from elements |
 | 👁 | `detect_qr` | Find & extract QR codes (login, payment) |
-| ✋ | `navigate` | Open URL (with smart profile suggestion) |
+| ✋ | `navigate` | Open URL |
 | ✋ | `click` | Click by hint ID or text. Self-heals if element moved. |
 | ✋ | `type` | Type into inputs. `pressEnter` to submit |
 | ✋ | `scroll` | Scroll page |
@@ -164,22 +183,16 @@ Set `approve_all` once for a category you trust, and it never asks again. Set `r
 | 🧠 | `cache_replay` | Replay a saved workflow (skip AI inference) |
 | 🧠 | `cache_list` | List saved workflows |
 | 🧠 | `cache_delete` | Delete a saved workflow |
-| 👤 | `profile_list` | List browser profiles |
-| 👤 | `profile_switch` | Switch active profile |
-| 👤 | `profile_label` | Name a profile |
-| 👤 | `profile_domain` | Associate domains with profiles |
-| 📄 | `page_to_pdf` | Export page as PDF (for headless) |
+| 💾 | `save_session` | Save cookies/sessions for next time |
+| 📄 | `page_to_pdf` | Export page as PDF |
 | 📋 | `get_tabs` | List open tabs |
 | 📋 | `get_audit_log` | Full action history |
 
 ## As a Skill
 
-Aether ships with `skill/SKILL.md` — a set of instructions that teaches any AI agent how to use it. The skill covers: when to call `get_hint_map`, how to handle Safe Mode approvals, multi-step patterns (search → filter → extract), popup dismissal, and security rules.
+Aether ships with `skill/SKILL.md` — instructions that teach any AI agent how to use it. The skill covers: when to call `get_hint_map`, how to handle Safe Mode approvals, multi-step patterns (search → filter → extract), popup dismissal, and security rules.
 
 ```bash
-# OpenClaw
-cp -r aether/skill ~/.openclaw/skills/aether
-
 # Claude Code
 cp -r aether/skill ~/.claude/skills/aether
 ```
@@ -188,34 +201,32 @@ cp -r aether/skill ~/.claude/skills/aether
 
 | | Aether | browser-use | Stagehand | Manus Operator |
 |-|--------|-------------|-----------|----------------|
-| Login sessions | ✅ Your real browser | ⚠️ Need config | ❌ Cloud session | ✅ Your browser |
-| Anti-detection | ✅ Nothing to detect | ⚠️ Stealth plugins | ❌ None | ✅ Nothing to detect |
+| No extension needed | ✅ Playwright | ⚠️ Python SDK | ⚠️ Own SDK | ❌ Manus only |
+| VPS / headless | ✅ Out of the box | ⚠️ Config needed | ❌ Cloud only | ❌ |
+| Session persistence | ✅ `--storage-state` | ⚠️ Manual | ❌ | ✅ |
 | Works with any AI | ✅ MCP standard | ⚠️ Python SDK | ⚠️ Own SDK | ❌ Manus only |
 | Open source | ✅ MIT | ✅ | ✅ | ❌ |
 | Page perception | ✅ Hint Map | ❌ Raw DOM | ⚠️ Partial | ❓ Unknown |
 | Safe Mode | ✅ Built-in | ❌ | ❌ | ❌ |
 | Self-Healing | ✅ Auto-recover | ❌ | ✅ | ❌ |
 | Path Cache | ✅ Record & replay | ❌ | ✅ Cache | ❌ |
-| Headless support | ✅ QR + PDF + full screenshot | ❌ | ❌ | ❌ |
-| Multi-Profile | ✅ Per-task switching | ❌ | ❌ | ❌ |
 
 ## Project Structure
 
 ```
 aether/
-├── extension/                Chrome Extension (Manifest V3)
-│   ├── content.js            Hint Map v2 + Self-Healing + Auto Dismiss + QR detection
-│   ├── background.js         WebSocket bridge + CDP (PDF, full screenshot, QR capture)
-│   └── popup.html            Connection status UI
 ├── server/
 │   └── src/
-│       ├── index.js          MCP Server + Safe Mode + 22 tools
+│       ├── index.js          MCP Server + Safe Mode + CLI
+│       ├── browser.js         Playwright browser manager
+│       ├── injected.js        Hint Map + Self-Healing + Auto Dismiss (injected into pages)
 │       ├── cache.js           Path Cache engine
-│       └── profiles.js        Multi-Profile manager
+│       └── profiles.js        Profile manager
+├── extension/                 (legacy) Chrome Extension — kept for reference
 ├── skill/
 │   └── SKILL.md              AI agent instructions
 └── scripts/
-    └── test-e2e.js           15/15 tests passing
+    └── test-e2e.js           E2E tests
 ```
 
 ## Roadmap
@@ -227,17 +238,12 @@ aether/
 - [x] Path Cache: record & replay multi-step workflows
 - [x] Self-Healing: auto-recover when elements move
 - [x] Headless: QR detection, PDF export, full-page screenshot
-- [x] Multi-Profile: per-task browser profile switching
-- [x] Skill format for OpenClaw / Claude Code
-- [ ] npm publish + ClawHub submission
+- [x] Playwright mode: no extension, no WebSocket, VPS-ready
+- [x] Session persistence: save & restore cookies
+- [x] Skill format for Claude Code
+- [ ] npm publish
 - [ ] WebMCP compatibility layer
 - [ ] Plugin marketplace for site-specific Hint Map optimizations
-
-## Philosophy
-
-> Don't build a new browser. Let AI **inhabit** the user's existing one.
-
-The browser agent space is in an arms race: bots get smarter, detection gets tighter. Aether steps out of the race entirely. When you use the user's own browser, there is no bot to detect.
 
 ## License
 

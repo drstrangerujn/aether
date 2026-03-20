@@ -210,7 +210,6 @@ function deletePath(key) {
 // ─── Exports ────────────────────────────────────────────────────────────────
 
 export {
-  startRecording, recordStep, stopRecording, cancelRecording, isRecording,
+  startRecording, recordStep, stopRecording, isRecording,
   findPath, markReplayed, listPaths, deletePath,
-  pageFingerprint,
 };
