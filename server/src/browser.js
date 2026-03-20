@@ -1,9 +1,9 @@
 /**
  * Aether Browser — Playwright driver
- * AI App <-MCP-> Server <-Playwright-> Browser
+ * AI <-MCP-> Server <-Playwright-> Browser
  */
 import { chromium } from 'playwright';
-import { readFileSync } from 'fs';
+import { readFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -20,12 +20,18 @@ export async function launch(opts = {}) {
       headless: opts.headless !== false,
       args: ['--disable-blink-features=AutomationControlled'],
     });
-    ctx = await browser.newContext({
+
+    // Only pass defined options — Playwright chokes on storageState: undefined
+    const ctxOpts = {
       viewport: opts.viewport || { width: 1280, height: 800 },
       locale: opts.locale || 'zh-CN',
-      userAgent: opts.userAgent, storageState: opts.storageState,
-    });
+    };
+    if (opts.userAgent) ctxOpts.userAgent = opts.userAgent;
+    if (opts.storageState) ctxOpts.storageState = opts.storageState;
+
+    ctx = await browser.newContext(ctxOpts);
   }
+
   await ctx.addInitScript(SCRIPT);
   console.error(`[Aether] Browser launched (headless: ${opts.headless !== false})`);
 }
@@ -38,6 +44,8 @@ async function page() {
   if (!ctx) throw new Error('Browser not launched.');
   const pp = ctx.pages();
   const p = pp.length ? pp[pp.length - 1] : await ctx.newPage();
+  // addInitScript handles injection on new navigations;
+  // manual inject only needed if page was created before addInitScript (e.g. CDP mode)
   if (!await p.evaluate(() => !!window.__aether).catch(() => false))
     await p.evaluate(SCRIPT).catch(() => {});
   return p;
@@ -51,6 +59,8 @@ export async function navigate(p) {
   const pg = p.newTab ? await ctx.newPage() : await page();
   await pg.goto(p.url, { timeout: p.timeout || 30000, waitUntil: 'domcontentloaded' });
   await pg.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  // After navigation, addInitScript re-injects automatically.
+  // But verify, in case goto was a same-page hash change or similar.
   if (!await pg.evaluate(() => !!window.__aether).catch(() => false))
     await pg.evaluate(SCRIPT).catch(() => {});
   return { url: pg.url(), title: await pg.title(), status: 'complete' };
@@ -97,7 +107,9 @@ export async function getTabs() {
   return Promise.all(ctx.pages().map(async (p, i) => ({ id: i, url: p.url(), title: await p.title().catch(() => ''), active: i === ctx.pages().length - 1 })));
 }
 
-export async function saveStorage(path) {
+export async function saveStorage(filePath) {
   if (!ctx) throw new Error('No context');
-  await ctx.storageState({ path });
+  // Ensure parent directory exists
+  mkdirSync(dirname(filePath), { recursive: true });
+  await ctx.storageState({ path: filePath });
 }

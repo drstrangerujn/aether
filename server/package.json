@@ -11,7 +11,7 @@
     "start:headed": "node src/index.js --headed",
     "dev": "node --watch src/index.js --headed",
     "test": "node ../scripts/test-e2e.js",
-    "postinstall": "npx playwright install chromium"
+    "postinstall": "npx playwright install --with-deps chromium"
   },
   "keywords": [
     "mcp",
