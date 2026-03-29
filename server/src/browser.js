@@ -73,6 +73,7 @@ export const scroll        = p => call(pg => pg.evaluate(p => __aether.handleScr
 export const extract       = (p = {}) => call(pg => pg.evaluate(p => __aether.handleExtract(p), p));
 export const waitFor       = (p = {}) => call(pg => pg.evaluate(p => __aether.handleWaitFor(p), p));
 export const autoDismiss   = () => call(pg => pg.evaluate(() => ({ dismissed: __aether.autoDismiss() })));
+export const detectQR      = () => call(pg => pg.evaluate(() => __aether.detectQR()));
 
 export async function screenshot(p = {}) {
   const pg = await page();

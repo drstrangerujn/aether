@@ -64,7 +64,15 @@ mcp.tool('auto_dismiss', 'Kill popups/banners.', {},
 mcp.tool('execute_js', 'Run JS in page.', { code: z.string() },
   run('execute_js', B.executeJs));
 
-// visual
+// visual & detection
+mcp.tool('detect_qr', 'Find QR codes on page. Useful for headless login — forward QR to Telegram/WeChat.', {}, async () => {
+  const r = await B.detectQR(); audit('detect_qr', {});
+  if (!r.found) return txt('No QR codes.');
+  const c = r.qrcodes.flatMap(q => [q.dataUrl && { type: 'image', data: q.dataUrl.replace(/^data:image\/\w+;base64,/, ''), mimeType: 'image/png' }, q.src && { type: 'text', text: `QR: ${q.src}` }].filter(Boolean));
+  c.push({ type: 'text', text: `${r.count} QR code(s)` });
+  return { content: c };
+});
+
 mcp.tool('screenshot', 'Viewport screenshot.', { format: z.enum(['png','jpeg']).optional(), quality: z.number().optional() },
   async p => { const r = await B.screenshot(p); audit('screenshot', p); return img(r.base64, r.mime, `${r.title} — ${r.url}`); });
 
