@@ -165,42 +165,6 @@
     return dismissed;
   }
 
-  // ── QR Detection ──────────────────────────────────────────────────────────
-
-  function detectQR() {
-    const results = [];
-    const QR_RE = /qr|二维码|扫码|扫一扫|scan|微信|wechat|alipay|支付宝|钉钉/i;
-
-    // Images
-    for (const img of document.querySelectorAll('img[src*="qr"], img[src*="QR"], img[src*="qrcode"], img[class*="qr"], img[id*="qr"], img[alt*="二维码"], img[alt*="QR"], img[alt*="扫码"]')) {
-      if (!isVisible(img) || img.width < 50 || img.height < 50) continue;
-      results.push({ type: 'img', src: img.src, size: { w: img.width, h: img.height } });
-    }
-
-    // Canvas (square-ish, near QR text or large enough)
-    for (const canvas of document.querySelectorAll('canvas')) {
-      if (!isVisible(canvas)) continue;
-      const r = canvas.getBoundingClientRect();
-      if (r.width < 80 || r.height < 80 || Math.abs(r.width - r.height) > r.width * 0.2) continue;
-      const nearbyText = (canvas.parentElement?.innerText || '').slice(0, 100);
-      if (!QR_RE.test(nearbyText) && r.width <= 120) continue;
-      try { results.push({ type: 'canvas', dataUrl: canvas.toDataURL('image/png'), size: { w: Math.round(r.width), h: Math.round(r.height) } }); }
-      catch { results.push({ type: 'canvas', tainted: true, size: { w: Math.round(r.width), h: Math.round(r.height) } }); }
-    }
-
-    // SVG (many rects/paths = likely QR)
-    for (const svg of document.querySelectorAll('svg')) {
-      if (!isVisible(svg)) continue;
-      const r = svg.getBoundingClientRect();
-      if (r.width < 80 || r.height < 80 || Math.abs(r.width - r.height) > r.width * 0.2) continue;
-      if (svg.querySelectorAll('rect, path').length > 50) {
-        results.push({ type: 'svg', size: { w: Math.round(r.width), h: Math.round(r.height) } });
-      }
-    }
-
-    return { found: results.length > 0, count: results.length, qrcodes: results };
-  }
-
   // ── Self-Healing ──────────────────────────────────────────────────────────
 
   const signatures = new Map();
@@ -401,5 +365,5 @@
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  window.__aether = { generateHintMap, handleClick, handleType, handleScroll, handleExtract, handleWaitFor, autoDismiss, detectQR };
+  window.__aether = { generateHintMap, handleClick, handleType, handleScroll, handleExtract, handleWaitFor, autoDismiss };
 })();

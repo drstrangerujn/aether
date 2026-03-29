@@ -1,6 +1,6 @@
 {
   "name": "aether-browser",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "AI browser agent via MCP. Playwright drives a real browser — no extension needed.",
   "main": "src/index.js",
   "bin": {
